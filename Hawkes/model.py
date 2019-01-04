@@ -726,7 +726,7 @@ def t_trans(l_baseline,kernel_int,T,itv):
 
     Int_ext_cumsum = Int_ext.cumsum()
 
-    return [Int_ext[:n],[0,Int_ext_cumsum[-1]]]
+    return [Int_ext_cumsum[:n],[0,Int_ext_cumsum[-1]]]
 
 def tl_kernel(l_kernel_sequential,T,itv):
 
