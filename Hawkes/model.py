@@ -79,7 +79,7 @@ class base_class:
         return [t,l_kernel+l_baseline,l_baseline]
     
     ### branching ratio
-    def br(self):
+    def branching_ratio(self):
         return self.kernel.branching_ratio(self.para)
     
     ### plot
