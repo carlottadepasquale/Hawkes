@@ -733,7 +733,7 @@ def tl_kernel(l_kernel_sequential,T,itv):
     [st,en] = itv
     t = np.hstack([ np.linspace(t[0],t[1],30) for t in np.vstack([np.hstack([st,T]),np.hstack([T,en])]).transpose() ])
     mark = np.zeros_like(t,dtype='i8')
-    mark[-31::-30] = 1
+    mark[29:-30:30] = 1
     l = np.zeros_like(t)
 
     for i in range(t.shape[0]-1):
