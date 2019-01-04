@@ -575,7 +575,7 @@ class l_kernel_sequential_exp:
 
     def event(self):
         alpha = self.para['alpha']; beta = self.para['beta']; g = self.g;
-        g += alpha*beta
+        g = g+alpha*beta
         l = g.sum()
         self.g  = g
         self.l = l
@@ -698,7 +698,7 @@ class l_kernel_sequential_pow:
 
     def event(self):
         g = self.g; H = self.H;
-        g += 1.0
+        g = g+1.0
         l = g.dot(H)
         self.g = g
         self.l = l
