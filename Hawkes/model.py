@@ -8,6 +8,7 @@ import scipy as sp
 import pandas as pd
 from matplotlib import pyplot as plt
 import matplotlib as mpl
+import matplotlib.gridspec as gridspec
 
 from scipy.special import gamma,digamma
 
@@ -77,11 +78,22 @@ class base_class:
         [t,l_kernel] = tl_kernel(l_kernel_sequential,T,itv)
         l_baseline = self.baseline.l(para,t)
         return [t,l_kernel+l_baseline,l_baseline]
-    
+
+    def t_trans(self):
+        para = self.para
+        T = self.T
+        itv = self.itv
+        l_baseline = lambda t: self.baseline.l(para,t)
+        kernel_int = lambda itv: self.kernel.int(para,itv[0],itv[1])
+        [T_trans,itv_trans] = t_trans(l_baseline,kernel_int,T,itv)
+        self.T_trans = T_trans
+        self.itv_trans = itv_trans
+        return [T_trans,itv_trans]
+
     ### branching ratio
     def branching_ratio(self):
         return self.kernel.branching_ratio(self.para)
-    
+
     ### plot
     def plot_l(self):
         T = self.T
@@ -92,6 +104,12 @@ class base_class:
         T = self.T
         itv = self.itv
         plot_N(T,itv)
+
+    def plot_KS(self):
+        self.t_trans()
+        T_trans = self.T_trans
+        itv_trans = self.itv_trans
+        plot_KS(T_trans,itv_trans)
 
 class simulator(base_class):
 
@@ -189,14 +207,6 @@ class estimator(base_class):
     def LG(self,para,only_L=False):
         return LG_HAWKES(self,para)
 
-    def t_trans(self):
-        para = self.para
-        T = self.T
-        itv = self.itv
-        l_baseline = lambda t: self.baseline.l(para,t)
-        kernel_int = lambda itv: self.kernel.int(para,itv[0],itv[1])
-        return t_trans(l_baseline,kernel_int,T,itv)
-
     def predict(self,en_f,num_seq=1):
         T = self.T
         itv = self.itv;
@@ -211,14 +221,14 @@ class estimator(base_class):
         self.en_f = en_f
         self.T_pred = T_pred
         return T_pred
-    
+
     def plot_N_pred(self):
         T = self.T
         T_pred = self.T_pred
         itv = self.itv
         en_f = self.en_f
         plot_N_pred(T,T_pred,itv,en_f)
-        
+
 
 ##########################################################################################################
 ## wrapper to routines
@@ -790,29 +800,11 @@ def simulate(l_kernel_sequential,l_baseline,itv):
 ## graph routine
 ###########################################################################################
 ###########################################################################################
-def plot_l(T,x,l,l_baseline):
-
-    plt.figure(figsize=(5,5), dpi=100)
-    mpl.rc('font', size=12, family='Arial')
-    mpl.rc('axes',titlesize=12)
-    mpl.rc('pdf',fonttype=42)
-
-    l_max = l.max()
-
-    plt.plot(x,l,'k-',lw=1)
-    plt.plot(x,l_baseline,'k:',lw=1)
-    plt.plot(np.hstack([ [t,t,np.NaN] for t in T]),np.tile([l_max*1.1,l_max*1.15,np.NaN],len(T)),'k-',linewidth=0.5)
-    #plt.plot(T,l_max*1.1*np.ones_like(T),'bo',markersize=1)
-    plt.xlim([x[0],x[-1]])
-    plt.ylim([0,l_max*1.15])
-    plt.xlabel('time')
-    plt.ylabel(r'$\lambda(t|H_t)$')
-    plt.gca().spines['top'].set_visible(False)
-    plt.gca().spines['right'].set_visible(False)
-
 def plot_N(T,itv):
 
-    plt.figure(figsize=(5,5), dpi=100)
+    gs = gridspec.GridSpec(100,1)
+
+    plt.figure(figsize=(4,5), dpi=100)
     mpl.rc('font', size=12, family='Arial')
     mpl.rc('axes',titlesize=12)
     mpl.rc('pdf',fonttype=42)
@@ -822,18 +814,62 @@ def plot_N(T,itv):
     x = np.hstack([st,np.repeat(T,2),en])
     y = np.repeat(np.arange(n+1),2)
 
-    plt.plot(x,y,'k-')
-    plt.plot(np.hstack([ [t,t,np.NaN] for t in T]),np.tile([n*1.1,n*1.15,np.NaN],len(T)),'k-',linewidth=0.5)
+    plt.subplot(gs[0:10,0])
+    plt.plot(np.hstack([ [t,t,np.NaN] for t in T]),np.array( [0,1,np.NaN] * n ),'k-',linewidth=0.5)
+    plt.xticks([])
     plt.xlim(itv)
-    plt.ylim([0,1.15*n])
+    plt.ylim([0,1])
+    plt.yticks([])
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['left'].set_visible(False)
+
+    plt.subplot(gs[15:100,0])
+    plt.plot(x,y,'k-',clip_on=False)
+    plt.xlim(itv)
+    plt.ylim([0,n])
     plt.xlabel('time')
     plt.ylabel(r'$N(0,t)$')
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
 
+def plot_l(T,x,l,l_baseline):
+
+    gs = gridspec.GridSpec(100,1)
+
+    plt.figure(figsize=(4,5), dpi=100)
+    mpl.rc('font', size=12, family='Arial')
+    mpl.rc('axes',titlesize=12)
+    mpl.rc('pdf',fonttype=42)
+
+    l_max = l.max()
+    n = len(T)
+
+    plt.subplot(gs[0:10,0])
+    plt.plot(np.hstack([ [t,t,np.NaN] for t in T]),np.array( [0,1,np.NaN] * n ),'k-',linewidth=0.5)
+    plt.xticks([])
+    plt.xlim([x[0],x[-1]])
+    plt.ylim([0,1])
+    plt.yticks([])
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['left'].set_visible(False)
+
+    plt.subplot(gs[15:100,0])
+    plt.plot(x,l,'k-',lw=1)
+    plt.plot(x,l_baseline,'k:',lw=1)
+    plt.xlim([x[0],x[-1]])
+    plt.ylim([0,l_max])
+    plt.xlabel('time')
+    plt.ylabel(r'$\lambda(t|H_t)$')
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+
 def plot_N_pred(T,T_pred,itv,en_f):
 
-    plt.figure(figsize=(5,5), dpi=100)
+    gs = gridspec.GridSpec(100,1)
+
+    plt.figure(figsize=(4,5), dpi=100)
     mpl.rc('font', size=12, family='Arial')
     mpl.rc('axes',titlesize=12)
     mpl.rc('pdf',fonttype=42)
@@ -843,7 +879,18 @@ def plot_N_pred(T,T_pred,itv,en_f):
     x = np.hstack([st,np.repeat(T,2),en])
     y = np.repeat(np.arange(n+1),2)
     n_pred_max = np.max([ len(T_i) for T_i in T_pred ])
-    
+
+    plt.subplot(gs[0:10,0])
+    plt.plot(np.hstack([ [t,t,np.NaN] for t in T]),np.array( [0,1,np.NaN] * n ),'k-',linewidth=0.5)
+    plt.xticks([])
+    plt.xlim([itv[0],en_f])
+    plt.ylim([0,1])
+    plt.yticks([])
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['left'].set_visible(False)
+
+    plt.subplot(gs[15:,0])
     plt.plot(x,y,'k-')
     plt.plot([en,en],[0,n+n_pred_max],'k--')
 
@@ -859,3 +906,27 @@ def plot_N_pred(T,T_pred,itv,en_f):
     plt.ylabel(r'$N(0,t)$')
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
+
+def plot_KS(T_trans,itv_trans):
+    from scipy.stats import kstest
+
+    plt.figure(figsize=(4,4), dpi=100)
+    mpl.rc('font', size=12, family='Arial')
+    mpl.rc('axes',titlesize=12)
+    mpl.rc('pdf',fonttype=42)
+
+    n = len(T_trans)
+    [st,en] = itv_trans
+    x = np.hstack([st,np.repeat(T_trans,2),en])
+    y = np.repeat(np.arange(n+1),2)/n
+    w = 1.36/np.sqrt(n)
+    [_,pvalue] = kstest(T_trans/itv_trans[1],'uniform')
+
+    plt.plot(x,y,"k-",label='Data')
+    plt.fill_between([0,n*w,n*(1-w),n],[0,0,1-2*w,1-w],[w,2*w,1,1],color="#dddddd",label='95% interval')
+    plt.xlim([0,n])
+    plt.ylim([0,1])
+    plt.ylabel("cumulative distribution function")
+    plt.xlabel("transformed time")
+    plt.title("p-value = %.3f" % pvalue)
+    plt.legend(loc="upper left")
