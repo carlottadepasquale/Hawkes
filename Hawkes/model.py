@@ -113,19 +113,20 @@ class base_class:
 
 class simulator(base_class):
 
-    def simulate(self):
-        itv = self.itv;
+    def simulate(self,itv):
+        self.itv = itv
         para = self.para
         l_kernel_sequential = self.kernel.l_sequential(para)
         l_baseline = self.l_baseline
         T = simulate(l_kernel_sequential,l_baseline,itv)
+
         self.T = T
         return T
 
 class estimator(base_class):
 
-    def fit(self,T,prior=[],opt=[],merge=[]):
-        itv = self.itv
+    def fit(self,T,itv,prior=[],opt=[],merge=[]):
+        self.itv = itv
         T = np.array(T); T = T[(itv[0]<T)&(T<itv[1])].copy();
         self.T = T
         kernel = self.kernel.type; baseline = self.baseline.type;
