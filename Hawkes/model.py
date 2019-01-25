@@ -12,8 +12,8 @@ import matplotlib.gridspec as gridspec
 
 from scipy.special import gamma,digamma
 
-from .StatTool import Quasi_Newton,indexed_ndarray
-from .BasisFunction import loglinear_COS_intensity,plinear_intensity
+from .StatTool import Quasi_Newton,indexed_ndarray,merge_stg
+from .BasisFunction import loglinear_COS,plinear
 
 try:
     import pyximport; pyximport.install(setup_args={'include_dirs': np.get_include()})
@@ -32,32 +32,14 @@ except:
 class base_class:
 
     ### initialize
-    def set_kernel(self,type,num_exp=1):
-
-        if type == 'exp':
-            self.kernel = kernel_exp(self,num_exp=num_exp)
-        elif type == 'pow':
-            self.kernel = kernel_pow(self)
-
+    def set_kernel(self,type,**kwargs):
+        kernel_class = {'exp':kernel_exp, 'pow':kernel_pow}
+        self.kernel = kernel_class[type](self,**kwargs)
         return self
 
-    def set_baseline(self,type,num_basis=4,l_prop=None,l_custom=None):
-
-        if type == 'const':
-            self.baseline = baseline_const(self)
-        elif type == 'loglinear':
-            self.baseline = baseline_loglinear(self,num_basis)
-        elif type == 'plinear':
-            self.baseline = baseline_plinear(self,num_basis)
-        elif type == 'prop':
-            self.baseline = baseline_prop(self,l_prop)
-        elif type == 'custom':
-            self.baseline = baseline_custom(self,l_custom)
-
-        return self
-
-    def set_itv(self,itv):
-        self.itv = itv
+    def set_baseline(self,type,**kwargs):
+        baseline_class = {'const':baseline_const,'loglinear':baseline_loglinear,'plinear':baseline_plinear,'prop':baseline_prop,'custom':baseline_custom}
+        self.baseline = baseline_class[type](self,**kwargs)
         return self
 
     def set_parameter(self,parameter):
@@ -66,25 +48,19 @@ class base_class:
         return self
 
     ### l
-    def l_baseline(self,x):
-        para = self.para
-        return self.baseline.l(para,x)
-
     def tl(self):
-        T = self.T
+        T = self.Data['T']
         itv = self.itv
-        para = self.para
-        l_kernel_sequential = self.kernel.l_sequential(para)
+        l_kernel_sequential = self.kernel.l_sequential()
         [t,l_kernel] = tl_kernel(l_kernel_sequential,T,itv)
-        l_baseline = self.baseline.l(para,t)
+        l_baseline = self.baseline.l(t)
         return [t,l_kernel+l_baseline,l_baseline]
 
     def t_trans(self):
-        para = self.para
-        T = self.T
+        T = self.Data['T']
         itv = self.itv
-        l_baseline = lambda t: self.baseline.l(para,t)
-        kernel_int = lambda itv: self.kernel.int(para,itv[0],itv[1])
+        l_baseline = self.baseline.l
+        kernel_int = self.kernel.int
         [T_trans,itv_trans] = t_trans(l_baseline,kernel_int,T,itv)
         self.T_trans = T_trans
         self.itv_trans = itv_trans
@@ -92,16 +68,16 @@ class base_class:
 
     ### branching ratio
     def branching_ratio(self):
-        return self.kernel.branching_ratio(self.para)
+        return self.kernel.branching_ratio()
 
     ### plot
     def plot_l(self):
-        T = self.T
+        T = self.Data['T']
         [t,l,l_baseline] = self.tl()
         plot_l(T,t,l,l_baseline)
 
     def plot_N(self):
-        T = self.T
+        T = self.Data['T']
         itv = self.itv
         plot_N(T,itv)
 
@@ -115,12 +91,10 @@ class simulator(base_class):
 
     def simulate(self,itv):
         self.itv = itv
-        para = self.para
-        l_kernel_sequential = self.kernel.l_sequential(para)
-        l_baseline = self.l_baseline
+        l_kernel_sequential = self.kernel.l_sequential()
+        l_baseline = self.baseline.l
         T = simulate(l_kernel_sequential,l_baseline,itv)
-
-        self.T = T
+        self.Data = {'T':T}
         return T
 
 class estimator(base_class):
@@ -128,69 +102,11 @@ class estimator(base_class):
     def fit(self,T,itv,prior=[],opt=[],merge=[]):
         self.itv = itv
         T = np.array(T); T = T[(itv[0]<T)&(T<itv[1])].copy();
-        self.T = T
-        kernel = self.kernel.type; baseline = self.baseline.type;
+        self.Data = {'T':T}
 
-        #baseline
-        if baseline == 'const':
-            para_length_baseline =    {'mu':1 }
-            para_exp_baseline =       {'mu':True }
-            para_ini_baseline =       {'mu':0.5*len(T)/(itv[1]-itv[0]) }
-            para_step_Q_baseline =    {'mu':0.2 }
-            para_step_diff_baseline = {'mu':0.01 }
-
-        elif baseline == 'loglinear':
-            num_basis = self.baseline.num_basis;
-            para_length_baseline =    {'mu':num_basis }
-            para_exp_baseline =       {'mu':False }
-            para_ini_baseline =       {'mu':np.log( 0.5*len(T)/(itv[1]-itv[0]) ) * np.ones(num_basis) }
-            para_step_Q_baseline =    {'mu':0.2 * np.ones(num_basis) }
-            para_step_diff_baseline = {'mu':0.01 * np.ones(num_basis) }
-            self.baseline.loglinear = loglinear_COS_intensity(itv,num_basis).set_x(T)
-
-        elif baseline == 'plinear':
-            num_basis = self.baseline.num_basis;
-            para_length_baseline =    {'mu':num_basis }
-            para_exp_baseline =       {'mu':True }
-            para_ini_baseline =       {'mu':0.5*len(T)/(itv[1]-itv[0])*np.ones(num_basis) }
-            para_step_Q_baseline =    {'mu':0.2 * np.ones(num_basis) }
-            para_step_diff_baseline = {'mu':0.01 * np.ones(num_basis) }
-            self.baseline.plinear = plinear_intensity(itv,num_basis).set_x(T)
-
-        elif baseline == 'prop':
-            baseline_prop = self.baseline.l_prop
-            para_length_baseline =    {'mu':1 }
-            para_exp_baseline =       {'mu':True }
-            para_ini_baseline =       {'mu':0.5*len(T) }
-            para_step_Q_baseline =    {'mu':0.2 }
-            para_step_diff_baseline = {'mu':0.01 }
-            self.baseline.l_prop_T = baseline_prop(T)
-
-        #kernel
-        if kernel == 'exp':
-            num_exp = self.kernel.num_exp
-            para_list_kernel = ['alpha','beta']
-            para_length_kernel =    {'alpha':num_exp, 'beta':num_exp                                                                   }
-            para_exp_kernel =       {'alpha':True, 'beta':True                                                                         }
-            para_ini_kernel =       {'alpha':(np.arange(num_exp)+1.0)*0.5/np.sum(np.arange(num_exp)+1.0), 'beta':np.ones(num_exp)      }
-            para_step_Q_kernel =    {'alpha':np.ones(num_exp)*0.2,                                        'beta':np.ones(num_exp)*0.2  }
-            para_step_diff_kernel = {'alpha':np.ones(num_exp)*0.01,                                       'beta':np.ones(num_exp)*0.01 }
-
-        elif kernel == 'pow':
-            para_list_kernel = ['k','p','c']
-            para_length_kernel =    {'k': 1,    'p':1,    'c':1    }
-            para_exp_kernel =       {'k': True, 'p':True, 'c':True }
-            para_ini_kernel =       {'k': 0.25, 'p':1.5,  'c':1.0  }
-            para_step_Q_kernel =    {'k': 0.2,  'p':0.2,  'c':0.2  }
-            para_step_diff_kernel = {'k': 0.01, 'p':0.01, 'c':0.01 }
-
-        stg = {}
-        stg['para_list'] =  ['mu'] + para_list_kernel
-        stg['para_length']    = dict(para_length_baseline,    **para_length_kernel)
-        stg['para_exp']       = dict(para_exp_baseline,       **para_exp_kernel)
-        stg['para_ini']       = dict(para_ini_baseline,       **para_ini_kernel)
-        stg['para_step_Q']    = dict(para_step_Q_baseline,    **para_step_Q_kernel)
-        stg['para_step_diff'] = dict(para_step_diff_baseline, **para_step_diff_kernel)
+        stg_b = self.baseline.prep_fit()
+        stg_k = self.kernel.prep_fit()
+        stg = merge_stg([stg_b,stg_k])
         self.stg = stg
 
         [para,L,ste,G_norm,i_loop] = Quasi_Newton(self,prior,merge,opt)
@@ -199,21 +115,21 @@ class estimator(base_class):
         self.parameter = para.to_dict()
         self.L = L
         self.AIC = -2.0*(L-len(para))
-        self.br = self.kernel.branching_ratio(para)
+        self.br = self.kernel.branching_ratio()
         self.ste = ste
         self.i_loop = i_loop
 
         return self
 
     def LG(self,para,only_L=False):
-        return LG_HAWKES(self,para)
+        self.para = para
+        return LG_SelfExcitingPointProcess(self)
 
     def predict(self,en_f,num_seq=1):
-        T = self.T
+        T = self.Data['T']
         itv = self.itv;
-        para = self.para
-        l_kernel_sequential = self.kernel.l_sequential(para)
-        l_baseline = self.l_baseline
+        l_kernel_sequential = self.kernel.l_sequential()
+        l_baseline = self.baseline.l
         l_kernel_sequential.initialize([T,itv[1]])
         T_pred = []
         for i in range(num_seq):
@@ -224,7 +140,7 @@ class estimator(base_class):
         return T_pred
 
     def plot_N_pred(self):
-        T = self.T
+        T = self.Data['T']
         T_pred = self.T_pred
         itv = self.itv
         en_f = self.en_f
@@ -232,21 +148,22 @@ class estimator(base_class):
 
 
 ##########################################################################################################
-## wrapper to routines
+## LG for general point process
 ##########################################################################################################
-def LG_HAWKES(model,para):
+def LG_SelfExcitingPointProcess(model):
 
-    n = len(model.T)
+    n = len(model.Data['T'])
+    para = model.para
 
-    [l_baseline,dl_baseline]     = model.baseline.LG_SUM(para)
-    [Int_baseline,dInt_baseline] = model.baseline.LG_INT(para)
-    [l_kernel,dl_kernel]         = model.kernel.LG_SUM(para)
-    [Int_kernel,dInt_kernel]     = model.kernel.LG_INT(para)
+    [l_baseline,dl_baseline]     = model.baseline.LG_SUM()
+    [Int_baseline,dInt_baseline] = model.baseline.LG_INT()
+    [l_kernel,dl_kernel]         = model.kernel.LG_SUM()
+    [Int_kernel,dInt_kernel]     = model.kernel.LG_INT()
 
     l = l_baseline + l_kernel
     Int = Int_baseline + Int_kernel
 
-    dl = para.inherit().initialize_values(n).insert_values_from_dict(dl_baseline).insert_values_from_dict(dl_kernel).values
+    dl   = para.inherit().initialize_values(n).insert_values_from_dict(dl_baseline  ).insert_values_from_dict(dl_kernel  ).values
     dInt = para.inherit().initialize_values(1).insert_values_from_dict(dInt_baseline).insert_values_from_dict(dInt_kernel).values
 
     L = np.sum(np.log(l)) - Int
@@ -255,127 +172,363 @@ def LG_HAWKES(model,para):
 
     return [L,G]
 
-###########################
-class baseline_const():
+##########################################################################################################
+## baseline class
+##########################################################################################################
+class baseline_const:
 
     def __init__(self,model):
         self.type = 'const'
         self.model = model
 
-    def LG_SUM(self,para):
-        T = self.model.T
-        return LG_baseline_const_SUM(T,para)
+    def prep_fit(self):
+        itv = self.model.itv
+        T = self.model.Data['T']
+        n = len(T)
 
-    def LG_INT(self,para):
+        list =      ['mu']
+        length =    {'mu':1 }
+        exp =       {'mu':True }
+        ini =       {'mu':0.5*len(T)/(itv[1]-itv[0]) }
+        step_Q =    {'mu':0.2 }
+        step_diff = {'mu':0.01 }
+
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
+
+    def LG_SUM(self):
+        para = self.model.para
+        Data = self.model.Data
+        n = len(Data['T'])
+        mu = para['mu']
+        l = mu*np.ones(n)
+        dl = {'mu':np.ones(n)}
+        return [l,dl]
+
+    def LG_INT(self):
+        para = self.model.para
+        mu = para['mu']
         [st,en] = self.model.itv
-        return LG_baseline_const_INT(para,st,en)
+        Int = mu*(en-st)
+        dInt = {'mu':en-st}
+        return [Int,dInt]
 
-    def l(self,para,t):
-        return l_baseline_const(para,t)
+    def l(self,t):
+        para = self.model.para
+        mu = para['mu']
+        return mu if isinstance(t,numbers.Number) else mu*np.ones_like(t)
 
 ###########################
-class baseline_loglinear():
+class baseline_loglinear:
 
     def __init__(self,model,num_basis):
         self.type = 'loglinear'
         self.num_basis = num_basis
         self.model = model
 
-    def LG_SUM(self,para):
-        loglinear = self.loglinear
-        return LG_baseline_loglinear_SUM(para,loglinear)
+    def prep_fit(self):
+        num_basis = self.num_basis;
+        itv = self.model.itv
+        T = self.model.Data['T']
+        n = len(T)
 
-    def LG_INT(self,para):
-        loglinear = self.loglinear
-        return LG_baseline_loglinear_INT(para,loglinear)
+        list =      ['mu']
+        length =    {'mu':num_basis }
+        exp =       {'mu':False }
+        ini =       {'mu':np.log( 0.5*n/(itv[1]-itv[0]) ) * np.ones(num_basis) }
+        step_Q =    {'mu':0.2 * np.ones(num_basis) }
+        step_diff = {'mu':0.01 * np.ones(num_basis) }
 
-    def l(self,para,t):
+        self.loglinear = loglinear_COS(itv,num_basis).set_x(T)
+
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
+
+    def LG_SUM(self):
+        para = self.model.para
         loglinear = self.loglinear
-        return l_baseline_loglinear(para,loglinear,t)
+        coef = para['mu']
+        [l,dl] = loglinear.set_coef(coef).get_l_dl()
+        dl = {'mu':np.transpose(dl)}
+        return [l,dl]
+
+    def LG_INT(self):
+        para = self.model.para
+        loglinear = self.loglinear
+        coef = para['mu']
+        [Int,dInt] = loglinear.set_coef(coef).get_int_dint()
+        dInt = {'mu':dInt}
+        return [Int,dInt]
+
+    def l(self,t):
+        para = self.model.para
+        loglinear = self.loglinear
+        coef = para['mu']
+        return loglinear.set_coef(coef).get_l_at(t)
 
 ###########################
-class baseline_plinear():
+class baseline_plinear:
 
     def __init__(self,model,num_basis):
         self.type = 'plinear'
         self.num_basis = num_basis
         self.model = model
 
-    def LG_SUM(self,para):
-        plinear = self.plinear
-        return LG_baseline_plinear_SUM(para,plinear)
+    def prep_fit(self):
+        itv = self.model.itv
+        T = self.model.Data['T']
+        n = len(T)
+        num_basis = self.num_basis
 
-    def LG_INT(self,para):
-        plinear = self.plinear
-        return LG_baseline_plinear_INT(para,plinear)
+        list   =    ['mu']
+        length =    {'mu':num_basis }
+        exp =       {'mu':True }
+        ini =       {'mu':0.5*n/(itv[1]-itv[0])*np.ones(num_basis) }
+        step_Q =    {'mu':0.2 * np.ones(num_basis) }
+        step_diff = {'mu':0.01 * np.ones(num_basis) }
 
-    def l(self,para,t):
+        self.plinear = plinear(itv,num_basis).set_x(T)
+
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
+
+    def LG_SUM(self):
+        para = self.model.para
         plinear = self.plinear
-        return l_baseline_plinear(para,plinear,t)
+        coef = para['mu']
+        [l,dl] = plinear.set_coef(coef).get_l_dl()
+        dl = {'mu':np.transpose(dl)}
+        return [l,dl]
+
+    def LG_INT(self):
+        para = self.model.para
+        plinear = self.plinear
+        coef = para['mu']
+        [Int,dInt] = plinear.set_coef(coef).get_int_dint()
+        dInt = {'mu':dInt}
+        return [Int,dInt]
+
+    def l(self,t):
+        para = self.model.para
+        plinear = self.plinear
+        coef = para['mu']
+        return plinear.set_coef(coef).get_l_at(t)
 
 ###########################
-class baseline_prop():
+class baseline_prop:
 
     def __init__(self,model,l_prop):
         self.type = 'prop'
         self.l_prop = l_prop
         self.model = model
 
-    def LG_SUM(self,para):
+    def prep_fit(self):
+        T = self.model.Data['T']
+        n = len(T)
+
+        list =      ['mu']
+        length =    {'mu':1 }
+        exp =       {'mu':True }
+        ini =       {'mu':0.5*n }
+        step_Q =    {'mu':0.2 }
+        step_diff = {'mu':0.01 }
+
+        self.l_prop_T = self.l_prop(T)
+
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
+
+    def LG_SUM(self):
+        para = self.model.para
+        coef = para['coef']
         l_prop_T = self.l_prop_T
-        return LG_baseline_prop_SUM(para,l_prop_T)
+        l = baseline_prop_T * coef
+        dl = {'mu':baseline_prop_T}
+        return [l,dl]
 
-    def LG_INT(self,para):
-        return LG_baseline_prop_INT(para)
+    def LG_INT(self):
+        para = self.model.para
+        coef = para['coef']
+        Int = coef
+        dInt = {'mu':1.0}
+        return [Int,dInt]
 
-    def l(self,para,t):
+    def l(self,t):
+        para = self.model.para
+        coef = para['coef']
         l_prop = self.l_prop
-        return l_baseline_prop(para,l_prop,t)
+        return coef * baseline_prop(t)
 
 ###########################
-class baseline_custom():
+class baseline_custom:
 
     def __init__(self,model,l_custom):
         self.type = 'custom'
         self.l_custom = l_custom
         self.model = model
 
-    def l(self,para,t):
+    def l(self,t):
         return self.l_custom(t)
 
-###########################
-class kernel_exp():
+##########################################################################################################
+## kernel class
+##########################################################################################################
+class kernel_exp:
 
     def __init__(self,model,num_exp=1):
         self.type = 'exp'
         self.num_exp = num_exp
         self.model = model
+        self.para_list = list( itertools.product(['alpha','beta'],range(num_exp)))
 
-    def LG_SUM(self,para):
-        T = self.model.T
+    def prep_fit(self):
         num_exp = self.num_exp
-        return LG_kernel_SUM_exp(T,para,num_exp)
+        list =      ['alpha','beta']
+        length =    {'alpha':num_exp,                                                     'beta':num_exp               }
+        exp =       {'alpha':True,                                                        'beta':True                  }
+        ini =       {'alpha':(np.arange(num_exp)+1.0)*0.5/np.sum(np.arange(num_exp)+1.0), 'beta':np.ones(num_exp)      }
+        step_Q =    {'alpha':np.ones(num_exp)*0.2,                                        'beta':np.ones(num_exp)*0.2  }
+        step_diff = {'alpha':np.ones(num_exp)*0.01,                                       'beta':np.ones(num_exp)*0.01 }
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
 
-    def LG_INT(self,para):
-        T = self.model.T
+    def LG_SUM(self):
+        Data = self.model.Data
+
+        if cython_import:
+            para = self.model.para
+            alpha = np.array(para['alpha']).reshape(-1)
+            beta  = np.array(para['beta']).reshape(-1)
+            num_exp = self.num_exp
+            T = Data['T']
+            n = len(T)
+            l  = 0
+            dl = {}
+            for i in range(num_exp):
+                [l_i,dl_a_i,dl_b_i] = LG_kernel_SUM_exp_i_cython(T, alpha[i], beta[i])
+                l = l + l_i
+                dl[('alpha',i)] = dl_a_i
+                dl[('beta',i)] = dl_b_i
+        else:
+            l_kernel_sequential = self.l_sequential()
+            [l,dl] = lg_kernel_sum_sequential(l_kernel_sequential,Data)
+
+        """
+        num_exp = self.num_exp
+        T = Data['T']
+        n = len(T)
+        l  = np.zeros(n)
+        dl = { key:np.zeros(n) for key in itertools.product(['alpha','beta'],range(num_exp)) }
+
+        for i in np.arange(1,n):
+            l[i] = self.func(T[i]-T[:i]).sum()
+            dl_i = self.d_func(T[i]-T[:i])
+            for j in range(num_exp):
+                dl[('alpha',j)][i] = dl_i[('alpha',j)].sum()
+                dl[('beta',j)][i] = dl_i[('beta',j)].sum()
+        """
+
+        return [l,dl]
+
+    def LG_INT(self):
+        Data = self.model.Data
+        T = Data['T']
         [_,en] = self.model.itv
         num_exp = self.num_exp
-        return LG_kernal_INT_exp(T,para,num_exp,en)
+        Int  = self.int(0,en-T).sum()
+        dInt = { key:grad.sum() for key,grad in self.d_int(np.zeros_like(T),en-T).items() }
+        return [Int,dInt]
 
-    def l_sequential(self,para):
+    def func(self,x):
+        para = self.model.para
+        alpha = np.array(para['alpha']).reshape(-1)
+        beta  = np.array(para['beta']).reshape(-1)
+        num_exp = self.num_exp
+        l = 0
+        for i in range(num_exp):
+            l = l + alpha[i] * beta[i] * np.exp( -beta[i] * x )
+        return l
+
+    def d_func(self,x):
+        para = self.model.para
+        alpha = np.array(para['alpha']).reshape(-1)
+        beta  = np.array(para['beta']).reshape(-1)
+        num_exp = self.num_exp
+        dl = {}
+        for i in range(num_exp):
+            dl[('alpha',i)] = np.exp( -beta[i] * x ) * beta[i]
+            dl[('beta',i) ] = np.exp( -beta[i] * x ) * ( alpha[i] - alpha[i] * beta[i] * x )
+        return dl
+
+    def int(self,x1,x2):
+        para = self.model.para
+        alpha = np.array(para['alpha']).reshape(-1)
+        beta  = np.array(para['beta']).reshape(-1)
+        num_exp = self.num_exp
+        Int = 0
+        for i in range(num_exp):
+            Int = Int + alpha[i] * ( np.exp( -beta[i] * x1 ) - np.exp( -beta[i] * x2 ) )
+        return Int
+
+    def d_int(self,x1,x2):
+        para = self.model.para
+        alpha = np.array(para['alpha']).reshape(-1)
+        beta  = np.array(para['beta']).reshape(-1)
+        num_exp = self.num_exp
+        dInt = {}
+        for i in range(num_exp):
+            dInt[('alpha',i)] = np.exp( -beta[i] * x1 ) - np.exp( -beta[i] * x2 )
+            dInt[('beta',i) ] = alpha[i] * ( - x1 * np.exp( -beta[i] * x1 ) + x2 * np.exp( -beta[i] * x2 ) )
+        return dInt
+
+    def branching_ratio(self):
+        para = self.model.para
+        br = np.array(para['alpha']).sum()
+        return br
+
+    def l_sequential(self):
+        para = self.model.para
         num_exp = self.num_exp
         return l_kernel_sequential_exp(para,num_exp)
 
-    def form(self,para,x):
-        num_exp = self.num_exp
-        return kernel_form_exp(para,num_exp,x)
+class l_kernel_sequential_exp:
 
-    def int(self,para,x1,x2):
-        num_exp = self.num_exp
-        return kernel_int_exp(para,num_exp,x1,x2)
+    def __init__(self,para,num_exp):
+        self.alpha = np.array(para['alpha']).reshape(-1)
+        self.beta = np.array(para['beta']).reshape(-1)
+        self.num_exp = num_exp
+        self.g   = np.zeros(num_exp)
+        self.g_b = np.zeros(num_exp)
+        self.l = 0
+        self.dl = { key:0 for key in itertools.product(['alpha','beta'],range(num_exp)) }
 
-    def branching_ratio(self,para):
-        return branching_ratio_exp(para)
+    def step_forward(self,step):
+        alpha = self.alpha; beta = self.beta; num_exp = self.num_exp;
+        g = self.g; g_b = self.g_b
+        r = np.exp(-beta*step)
+
+        g   = g*r
+        g_b = g_b*r - g*step
+        l = g.sum()
+        dl = { ('alpha',i):g[i]/alpha[i] for i in range(num_exp) }
+        dl.update( { ('beta',i): g_b[i]  for i in range(num_exp) } )
+        self.g = g
+        self.g_b = g_b
+        self.l = l
+        self.dl = dl
+
+
+    def event(self):
+        alpha = self.alpha; beta = self.beta;
+        g = self.g; g_b = self.g_b
+        g = g + alpha*beta
+        g_b = g_b + alpha
+        l = g.sum()
+        self.g  = g
+        self.g_b = g_b
+        self.l = l
+
+    def initialize(self,history):
+        initialize_l_sequential(self,history)
+
+    def reset(self):
+        self.g = self.g0
+        self.l = self.l0
 
 ###########################
 class kernel_pow():
@@ -383,308 +536,90 @@ class kernel_pow():
     def __init__(self,model):
         self.type = 'pow'
         self.model = model
+        self.para_list = ['k','p','c']
 
-    def LG_SUM(self,para):
-        T = self.model.T
-        return LG_kernel_SUM_pow(T,para)
+    def prep_fit(self):
+        list = ['k','p','c']
+        length =    {'k': 1,    'p':1,    'c':1    }
+        exp =       {'k': True, 'p':True, 'c':True }
+        ini =       {'k': 0.25, 'p':1.5,  'c':1.0  }
+        step_Q =    {'k': 0.2,  'p':0.2,  'c':0.2  }
+        step_diff = {'k': 0.01, 'p':0.01, 'c':0.01 }
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
 
-    def LG_INT(self,para):
-        T = self.model.T
+    def LG_SUM(self):
+        Data = self.model.Data
+        l_kernel_sequential = self.l_sequential()
+        [l,dl] = lg_kernel_sum_sequential(l_kernel_sequential,Data)
+
+        """
+        T = Data['T']
+        n = len(T)
+        l  = np.zeros(n)
+        dl = {'k':np.zeros(n), 'p':np.zeros(n), 'c':np.zeros(n)}
+
+        for i in np.arange(1,n):
+            l[i] = self.func(T[i]-T[:i]).sum()
+            dl_i = self.d_func(T[i]-T[:i])
+            dl['k'][i] = dl_i['k'].sum()
+            dl['p'][i] = dl_i['p'].sum()
+            dl['c'][i] = dl_i['c'].sum()
+        """
+
+        return [l,dl]
+
+    def LG_INT(self):
+        Data = self.model.Data
+        T = Data['T']
         [_,en] = self.model.itv
-        return LG_kernal_INT_pow(T,para,en)
+        Int  = self.int(0,en-T).sum()
+        dInt = { key:grad.sum() for key,grad in self.d_int(0,en-T).items() }
+        return [Int,dInt]
 
-    def l_sequential(self,para):
+    def func(self,x):
+        para = self.model.para
+        k = para['k']; p = para['p']; c = para['c'];
+        return k * (x+c)**(-p)
+
+    def d_func(self,x):
+        para = self.model.para
+        k = para['k']; p = para['p']; c = para['c'];
+        dl = {}
+        dl['k']     =      (x+c)**(-p)
+        dl['p']     = -k * (x+c)**(-p) * np.log(x+c)
+        dl['c']     = -k * (x+c)**(-p-1) * p
+        return dl
+
+    def int(self,x1,x2):
+        para = self.model.para
+        k = para['k']; p = para['p']; c = para['c'];
+        Int = k / (-p+1) * ( (x2+c)**(-p+1) - (x1+c)**(-p+1) )
+        return Int
+
+    def d_int(self,x1,x2):
+        para = self.model.para
+        k = para['k']; p = para['p']; c = para['c'];
+        f1 = k / (-p+1) * (x1+c)**(-p+1)
+        f2 = k / (-p+1) * (x2+c)**(-p+1)
+        dInt = {}
+        dInt['k']     = (f2-f1)/k
+        dInt['p']     = (f2-f1)/(-p+1) + ( - f2*np.log(x2+c) + f1*np.log(x1+c) )
+        dInt['c']     = ( f2/(x2+c) - f1/(x1+c) ) * (-p+1)
+        return dInt
+
+    def branching_ratio(self):
+        para = self.model.para
+        k = para['k']; p = para['p']; c = para['c'];
+        br = -k/(-p+1)*c**(-p+1) if p>1 else np.inf
+        return br
+
+    def l_sequential(self):
+        para = self.model.para
         return l_kernel_sequential_pow(para)
-
-    def form(self,para,x):
-        return kernel_form_pow(para,x)
-
-    def int(self,para,x1,x2):
-        return kernel_int_pow(para,x1,x2)
-
-    def branching_ratio(self,para):
-        return branching_ratio_pow(para)
-
-##########################################################################################################
-## Base routines
-##########################################################################################################
-
-############################## baseline rate: const
-def LG_baseline_const_SUM(T,para):
-    mu = para['mu']
-    n = len(T)
-    l = mu*np.ones(n)
-    dl = {'mu':np.ones(n)}
-    return [l,dl]
-
-def LG_baseline_const_INT(para,st,en):
-    mu = para['mu']
-    Int = mu*(en-st)
-    dInt = {'mu':en-st}
-    return [Int,dInt]
-
-def l_baseline_const(para,x):
-    mu = para['mu']
-    return mu if isinstance(x,numbers.Number) else mu*np.ones_like(x)
-
-############################## baseline rate: basis function (cosine bump)
-def LG_baseline_loglinear_SUM(para,loglinear):
-    loglinear.set_coef(para['mu'])
-    [l,dl] = loglinear.get_y_dy()
-    dl = {'mu':np.transpose(dl)}
-    return [l,dl]
-
-def LG_baseline_loglinear_INT(para,loglinear):
-    loglinear.set_coef(para['mu'])
-    [Int,dInt] = loglinear.get_int_dint()
-    dInt = {'mu':dInt}
-    return [Int,dInt]
-
-def l_baseline_loglinear(para,loglinear,t):
-    return loglinear.set_coef(para['mu']).get_y_at(t)
-
-############################## baseline rate: basis function (piecewise linear)
-def LG_baseline_plinear_SUM(para,plinear):
-    plinear.set_coef(para['mu'])
-    [l,dl] = plinear.get_y_dy()
-    dl = {'mu':np.transpose(dl)}
-    return [l,dl]
-
-def LG_baseline_plinear_INT(para,plinear):
-    plinear.set_coef(para['mu'])
-    [Int,dInt] = plinear.get_int_dint()
-    dInt = {'mu':dInt}
-    return [Int,dInt]
-
-def l_baseline_plinear(para,plinear,t):
-    return plinear.set_coef(para['mu']).get_y_at(t)
-
-############################## baseline rate: scaled model
-def LG_baseline_prop_SUM(para,baseline_prop_T):
-    coef = para['mu']
-    l = baseline_prop_T * coef
-    dl = {'mu':baseline_prop_T}
-    return [l,dl]
-
-def LG_baseline_prop_INT(para):
-    coef = para['mu']
-    Int = coef
-    dInt = {'mu':1.0}
-    return [Int,dInt]
-
-def l_baseline_prop(para,baseline_prop,t):
-    return para['mu'] * baseline_prop(t)
-
-
-############################## kernel Exp
-def LG_kernel_SUM_exp(T,para,num_exp):
-
-    alpha = [para['alpha']] if num_exp == 1 else para['alpha']
-    beta  = [para['beta']]  if num_exp == 1 else para['beta']
-
-    n = len(T)
-    l = np.zeros(n)
-    dl = {}
-
-    for i in range(num_exp):
-        if cython_import:
-            [l_i,dl_a_i,dl_b_i] = LG_kernel_SUM_exp_i_cython(T,alpha[i],beta[i])
-        else:
-            [l_i,dl_i_a,dl_i_b] = LG_kernel_SUM_exp_i_python(T,alpha[i],beta[i])
-
-        l = l + l_i
-        dl[('alpha',i)] = dl_a_i
-        dl[('beta',i)] = dl_b_i
-
-    return [l,dl]
-
-def LG_kernel_SUM_exp_i_python(T,alpha,beta):
-
-    n = len(T)
-    l    = np.zeros(n)
-    dl_a = np.zeros(n)
-    dl_b = np.zeros(n)
-
-    '''
-    for i in np.arange(1,n):
-        l[i]    = ( alpha*beta*np.exp(-beta*(T[i]-T[0:i]))                                                        ).sum()
-        dl_a[i] = (       beta*np.exp(-beta*(T[i]-T[0:i]))                                                        ).sum()
-        dl_b[i] = ( alpha*     np.exp(-beta*(T[i]-T[0:i])) - alpha*beta*(T[i]-T[0:i])*np.exp(-beta*(T[i]-T[0:i])) ).sum()
-
-    '''
-
-    dT = T[1:]-T[:-1]
-    x = 0; x_a = 0; x_b = 0;
-
-    for i in np.arange(n-1):
-        r = np.exp(-beta*dT[i])
-        x   = ( x + alpha*beta ) * r
-        x_a = ( x_a + beta ) * r
-        x_b = ( x_b + alpha ) * r - x*dT[i]
-        l[i+1] = x; dl_a[i+1] = x_a; dl_b[i+1] = x_b;
-
-    return [l,dl_a,dl_b]
-
-def LG_kernal_INT_exp(T,para,num_exp,en):
-
-    alpha = [para['alpha']] if num_exp == 1 else para['alpha']
-    beta  = [para['beta']]  if num_exp == 1 else para['beta']
-
-    Int = 0
-    dInt = {}
-
-    for i in range(num_exp):
-        [Int_i,dInt_i_a,dInt_i_b] = LG_kernel_INT_exp_i(T,alpha[i],beta[i],en)
-        Int += Int_i
-        dInt[('alpha',i)] = dInt_i_a
-        dInt[('beta',i)] = dInt_i_b
-
-    return [Int,dInt]
-
-def LG_kernel_INT_exp_i(T,alpha,beta,en):
-    tau = en-T
-    Int = ( alpha*( 1 - np.exp(-beta*tau) ) ).sum()
-    dInt_a = Int/alpha
-    dInt_b = ( alpha*tau* np.exp(-beta*tau) ) .sum()
-    return [Int,dInt_a,dInt_b]
-
-def kernel_form_exp(para,num_exp,x):
-    alpha = [para['alpha']] if num_exp == 1 else para['alpha']
-    beta  = [para['beta']]  if num_exp == 1 else para['beta']
-    l = np.zeros_like(x)
-    for i in range(num_exp):
-        l += alpha[i]*beta[i]*np.exp(-beta[i]*x)
-    return l
-
-def kernel_int_exp(para,num_exp,x1,x2):
-    alpha = [para['alpha']] if num_exp == 1 else para['alpha']
-    beta  = [para['beta']]  if num_exp == 1 else para['beta']
-    Int = np.zeros_like(x1)
-    x1 = x1*np.heaviside(x1,0); x2 = x2*np.heaviside(x2,0);
-    for i in range(num_exp):
-        Int += alpha[i] * ( np.exp( -beta[i]*x1 ) - np.exp( -beta[i]*x2 ) )
-    return Int
-
-def branching_ratio_exp(para):
-    alpha = para['alpha']
-    br = alpha if isinstance(alpha,numbers.Number) else alpha.sum()
-    return br
-
-class l_kernel_sequential_exp:
-
-    def __init__(self,para,num_exp):
-        self.para = para
-        self.g = 0 if num_exp == 1 else np.zeros_like(para['alpha'])
-        self.l = 0
-
-    def step_forward(self,step):
-        beta = self.para['beta']; g = self.g;
-        g = g*np.exp(-beta*step)
-        l = g.sum()
-        self.g  = g
-        self.l = l
-
-    def event(self):
-        alpha = self.para['alpha']; beta = self.para['beta']; g = self.g;
-        g = g+alpha*beta
-        l = g.sum()
-        self.g  = g
-        self.l = l
-
-    def initialize(self,history):
-        initialize_l_sequential(self,history)
-
-    def reset(self):
-        self.g = self.g0 if isinstance(self.g0,numbers.Number) else self.g0.copy()
-        self.l = self.l0
-
-############################## kernel Pow
-def LG_kernel_SUM_pow(T,para):
-    k = para['k']; p = para['p']; c = para['c'];
-    if cython_import:
-        [l,dl_k,dl_p,dl_c] = LG_kernel_SUM_pow_cython(T,k,p,c)
-    else:
-        [l,dl_k,dl_p,dl_c] = LG_kernel_SUM_pow_python(T,k,p,c)
-    dl = {'k':dl_k, 'p':dl_p, 'c':dl_c}
-    return [l,dl]
-
-def LG_kernel_SUM_pow_python(T,k,p,c):
-
-    n = len(T)
-
-    '''
-    l    = np.zeros(n)
-    dl_k = np.zeros(n)
-    dl_p = np.zeros(n)
-    dl_c = np.zeros(n)
-
-    for i in np.arange(1,n):
-        l[i]    = ( k*(T[i]-T[0:i]+c)**(-p)                             ).sum()
-        dl_k[i] = (   (T[i]-T[0:i]+c)**(-p)                             ).sum()
-        dl_p[i] = ( -k*np.log(T[i]-T[0:i]+c)*(T[i]-T[0:i]+c)**(-p)      ).sum()
-        dl_c[i] = ( -k*p*(T[i]-T[0:i]+c)**(-p-1)                        ).sum()
-    '''
-
-
-    num_div = 16
-    delta = 1.0/num_div
-    s = np.linspace(-9,9,num_div*18+1)
-    log_phi = s-np.exp(-s)
-    log_dphi = log_phi + np.log(1+np.exp(-s))
-    phi = np.exp(log_phi)   # phi = np.exp(s-np.exp(-s))
-    dphi = np.exp(log_dphi) # dphi = phi*(1+np.exp(-s))
-
-    H   = delta * k * np.exp( log_dphi + (p-1)*log_phi - c*phi ) / gamma(p)
-    H_p = delta * k * np.exp( log_dphi + (p-1)*log_phi - c*phi ) / gamma(p) * (log_phi-digamma(p))
-    H_c = delta * k * np.exp( log_dphi +     p*log_phi - c*phi ) / gamma(p) * (-1)
-
-    g = np.zeros_like(s)
-    l = np.zeros(n)
-    dl_k = np.zeros(n)
-    dl_p = np.zeros(n)
-    dl_c = np.zeros(n)
-
-    for i in range(n-1):
-        g = (g+1)*np.exp( - phi*(T[i+1]-T[i]) )
-        l[i+1] = g.dot(H)
-        dl_k[i+1] = g.dot(H)/k
-        dl_p[i+1] = g.dot(H_p)
-        dl_c[i+1] = g.dot(H_c)
-
-
-    return [l,dl_k,dl_p,dl_c]
-
-def LG_kernal_INT_pow(T,para,en):
-    k = para['k']; p = para['p']; c = para['c'];
-    Int_array = k/(-p+1)*( (en-T+c)**(-p+1) - (c)**(-p+1) )
-    Int = Int_array.sum()
-    dInt = {}
-    dInt['k'] = Int/k
-    dInt['p'] = Int/(-p+1) + ( k/(-p+1)*( -np.log(en-T+c)*(en-T+c)**(-p+1) + np.log(c)*(c)**(-p+1) ) ).sum()
-    dInt['c'] = ( k *( (en-T+c)**(-p) - (c)**(-p) ) ).sum()
-
-    return [Int,dInt]
-
-def kernel_form_pow(para,x):
-    k = para['k']; p = para['p']; c = para['c'];
-    return k*(x+c)**(-p)
-
-def kernel_int_pow(para,x1,x2):
-    k = para['k']; p = para['p']; c = para['c'];
-    x1 = x1*np.heaviside(x1,0); x2 = x2*np.heaviside(x2,0);
-    Int = k / (-p+1) * ( (x2+c)**(-p+1) - (x1+c)**(-p+1) )
-    return Int
-
-def branching_ratio_pow(para):
-    k = para['k']; p = para['p']; c = para['c'];
-    br = -k/(-p+1)*c**(-p+1) if p>1 else np.inf
-    return br
 
 class l_kernel_sequential_pow:
 
     def __init__(self,para):
-        self.para = para
-
         k = para['k']; p = para['p']; c = para['c'];
         num_div = 16
         delta = 1.0/num_div
@@ -692,20 +627,30 @@ class l_kernel_sequential_pow:
         log_phi = s-np.exp(-s)
         log_dphi = log_phi + np.log(1+np.exp(-s))
         phi = np.exp(log_phi)   # phi = np.exp(s-np.exp(-s))
-        dphi = np.exp(log_dphi) # dphi = phi*(1+np.exp(-s))
+
         H   = delta * k * np.exp( log_dphi + (p-1)*log_phi - c*phi ) / gamma(p)
+        H_k = delta *     np.exp( log_dphi + (p-1)*log_phi - c*phi ) / gamma(p)
+        H_p = delta * k * np.exp( log_dphi + (p-1)*log_phi - c*phi ) / gamma(p) * (log_phi-digamma(p))
+        H_c = delta * k * np.exp( log_dphi +     p*log_phi - c*phi ) / gamma(p) * (-1)
+
         g = np.zeros_like(s)
         self.g = g
+        self.l = 0
+        self.dl = {'k':0, 'p':0, 'c':0}
         self.phi = phi
         self.H = H
-        self.l = 0
+        self.H_k = H_k
+        self.H_p = H_p
+        self.H_c = H_c
 
     def step_forward(self,step):
-        g = self.g; phi = self.phi; H = self.H;
+        g = self.g; phi = self.phi; H = self.H; H_k = self.H_k; H_p = self.H_p; H_c = self.H_c;
         g = g*np.exp(-phi*step)
         l = g.dot(H)
+        dl = {'k':g.dot(H_k),'p':g.dot(H_p),'c':g.dot(H_c)}
         self.g = g
         self.l = l
+        self.dl = dl
 
     def event(self):
         g = self.g; H = self.H;
@@ -726,6 +671,24 @@ class l_kernel_sequential_pow:
 ## general routine
 ###########################################################################################
 ###########################################################################################
+def lg_kernel_sum_sequential(l_kernel_sequential,Data):
+    T = Data['T'];
+    n = len(T)
+    l  = np.zeros(n)
+    dl = l_kernel_sequential.dl
+    dl = { key:np.zeros(n) for key in dl }
+
+    for i in range(n-1):
+        l_kernel_sequential.event()
+        l_kernel_sequential.step_forward(T[i+1]-T[i])
+        l[i+1] = l_kernel_sequential.l
+        dl_i = l_kernel_sequential.dl
+        for key in dl_i:
+            dl[key][i+1] = dl_i[key]
+
+    return [l,dl]
+
+
 def t_trans(l_baseline,kernel_int,T,itv):
     [st,en] = itv
     n = len(T)
@@ -921,13 +884,13 @@ def plot_KS(T_trans,itv_trans):
     x = np.hstack([st,np.repeat(T_trans,2),en])
     y = np.repeat(np.arange(n+1),2)/n
     w = 1.36/np.sqrt(n)
-    [_,pvalue] = kstest(T_trans/itv_trans[1],'uniform')
+    [_,pvalue] = kstest(T_trans/itv_trans[1],'unifunc')
 
     plt.plot(x,y,"k-",label='Data')
     plt.fill_between([0,n*w,n*(1-w),n],[0,0,1-2*w,1-w],[w,2*w,1,1],color="#dddddd",label='95% interval')
     plt.xlim([0,n])
     plt.ylim([0,1])
     plt.ylabel("cumulative distribution function")
-    plt.xlabel("transformed time")
+    plt.xlabel("transfunced time")
     plt.title("p-value = %.3f" % pvalue)
     plt.legend(loc="upper left")

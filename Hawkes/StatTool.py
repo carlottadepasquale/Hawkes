@@ -160,7 +160,7 @@ def Quasi_Newton(model,prior=[],merge=[],opt=[]):
     param.add_hash( [ pr for pr in para_list if     model.stg["para_exp"][pr] ], "para_exp")
     param.add_hash( [ pr for pr in para_list if not model.stg["para_exp"][pr] ], "para_ord")
 
-    para = param.inherit().set_values_from_dict(model.stg["para_ini"]) if "para_ini" not in opt else param.inherit().set_values(model.para.values.copy())
+    para = param.inherit().set_values_from_dict(model.stg["para_ini"]) if "para_ini" not in opt else param.inherit().set_values_from_dict(model.para)
     step_Q = param.inherit().set_values_from_dict(model.stg["para_step_Q"]).values
     m = len(para)
 
@@ -471,7 +471,7 @@ class indexed_ndarray():
             return pd.Series(self.values,index=pd.MultiIndex.from_tuples(self.index_tuple))
         else:
             return pd.DataFrame(self.values,index=pd.MultiIndex.from_tuples(self.index_tuple))
-        
+
     def to_dict(self):
         return { para: self.values[self.hash[para]] for para in self.para_list }
 
@@ -493,3 +493,26 @@ class indexed_ndarray():
 
     def __str__(self):
         return self.to_pd().__str__()
+
+#################################
+## para_stg
+#################################
+def merge_stg(para_stgs):
+
+    stg = {}
+    stg['para_list']      = []
+    stg['para_length']    = {}
+    stg['para_exp']       = {}
+    stg['para_ini']       = {}
+    stg['para_step_Q']    = {}
+    stg['para_step_diff'] = {}
+
+    for para_stg in para_stgs:
+        stg['para_list'].extend(para_stg['list'])
+        stg['para_length'].update(para_stg['length'])
+        stg['para_exp'].update(para_stg['exp'])
+        stg['para_ini'].update(para_stg['ini'])
+        stg['para_step_Q'].update(para_stg['step_Q'])
+        stg['para_step_diff'].update(para_stg['step_diff'])
+
+    return stg
