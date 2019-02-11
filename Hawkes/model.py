@@ -694,9 +694,12 @@ def t_trans(l_baseline,kernel_int,T,itv):
     n = len(T)
     T_ext = np.hstack([st,T,en])
     Int_ext = np.zeros(n+1)
-
+    
     for i in range(n+1):
-        Int_ext[i] = kernel_int([T_ext[i]-T,T_ext[i+1]-T]).sum() + (l_baseline(T_ext[i])+l_baseline(T_ext[i+1]))*(T_ext[i+1]-T_ext[i])/2.0
+        Int_ext[i] += (l_baseline(T_ext[i])+l_baseline(T_ext[i+1]))*(T_ext[i+1]-T_ext[i])/2.0
+
+    for i in range(n):
+        Int_ext[i+1] += kernel_int(T_ext[i+1]-T[:i+1],T_ext[i+2]-T[:i+1]).sum() 
 
     Int_ext_cumsum = Int_ext.cumsum()
 
@@ -884,7 +887,7 @@ def plot_KS(T_trans,itv_trans):
     x = np.hstack([st,np.repeat(T_trans,2),en])
     y = np.repeat(np.arange(n+1),2)/n
     w = 1.36/np.sqrt(n)
-    [_,pvalue] = kstest(T_trans/itv_trans[1],'unifunc')
+    [_,pvalue] = kstest(T_trans/itv_trans[1],'uniform')
 
     plt.plot(x,y,"k-",label='Data')
     plt.fill_between([0,n*w,n*(1-w),n],[0,0,1-2*w,1-w],[w,2*w,1,1],color="#dddddd",label='95% interval')
