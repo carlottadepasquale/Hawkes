@@ -246,7 +246,9 @@ class baseline_loglinear:
         para = self.model.para
         loglinear = self.loglinear
         coef = para['mu']
-        [l,dl] = loglinear.set_coef(coef).get_l_dl()
+        loglinear.set_coef(coef)
+        l = loglinear.get_y()
+        dl = loglinear.get_dy()
         dl = {'mu':np.transpose(dl)}
         return [l,dl]
 
@@ -254,7 +256,9 @@ class baseline_loglinear:
         para = self.model.para
         loglinear = self.loglinear
         coef = para['mu']
-        [Int,dInt] = loglinear.set_coef(coef).get_int_dint()
+        loglinear.set_coef(coef)
+        Int = loglinear.get_int()
+        dInt = loglinear.get_dint()
         dInt = {'mu':dInt}
         return [Int,dInt]
 
@@ -262,7 +266,7 @@ class baseline_loglinear:
         para = self.model.para
         loglinear = self.loglinear
         coef = para['mu']
-        return loglinear.set_coef(coef).get_l_at(t)
+        return loglinear.set_coef(coef).get_y_at(t)
 
 ###########################
 class baseline_plinear:
@@ -293,7 +297,9 @@ class baseline_plinear:
         para = self.model.para
         plinear = self.plinear
         coef = para['mu']
-        [l,dl] = plinear.set_coef(coef).get_l_dl()
+        plinear.set_coef(coef)
+        l = plinear.get_y()
+        dl = plinear.get_dy()
         dl = {'mu':np.transpose(dl)}
         return [l,dl]
 
@@ -301,7 +307,9 @@ class baseline_plinear:
         para = self.model.para
         plinear = self.plinear
         coef = para['mu']
-        [Int,dInt] = plinear.set_coef(coef).get_int_dint()
+        plinear.set_coef(coef)
+        Int = plinear.get_int()
+        dInt = plinear.get_dint()
         dInt = {'mu':dInt}
         return [Int,dInt]
 
@@ -309,7 +317,7 @@ class baseline_plinear:
         para = self.model.para
         plinear = self.plinear
         coef = para['mu']
-        return plinear.set_coef(coef).get_l_at(t)
+        return plinear.set_coef(coef).get_y_at(t)
 
 ###########################
 class baseline_prop:
@@ -694,12 +702,12 @@ def t_trans(l_baseline,kernel_int,T,itv):
     n = len(T)
     T_ext = np.hstack([st,T,en])
     Int_ext = np.zeros(n+1)
-    
+
     for i in range(n+1):
         Int_ext[i] += (l_baseline(T_ext[i])+l_baseline(T_ext[i+1]))*(T_ext[i+1]-T_ext[i])/2.0
 
     for i in range(n):
-        Int_ext[i+1] += kernel_int(T_ext[i+1]-T[:i+1],T_ext[i+2]-T[:i+1]).sum() 
+        Int_ext[i+1] += kernel_int(T_ext[i+1]-T[:i+1],T_ext[i+2]-T[:i+1]).sum()
 
     Int_ext_cumsum = Int_ext.cumsum()
 
