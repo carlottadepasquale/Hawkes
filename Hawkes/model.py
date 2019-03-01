@@ -60,11 +60,15 @@ class base_class:
         T = self.Data['T']
         itv = self.itv
         l_baseline = self.baseline.l
-        kernel_int = self.kernel.int
-        [T_trans,itv_trans] = t_trans(l_baseline,kernel_int,T,itv)
+        l_kernel_sequential = self.kernel.l_sequential()
+        [T_trans,itv_trans] = t_trans(l_baseline,l_kernel_sequential,T,itv)
         self.T_trans = T_trans
         self.itv_trans = itv_trans
         return [T_trans,itv_trans]
+
+    def iei_trans(self):
+        T_trans,_ = self.t_trans()
+        return np.ediff1d(T_trans)
 
     ### branching ratio
     def branching_ratio(self):
@@ -504,11 +508,13 @@ class l_kernel_sequential_exp:
         self.g_b = np.zeros(num_exp)
         self.l = 0
         self.dl = { key:0 for key in itertools.product(['alpha','beta'],range(num_exp)) }
+        self.Int = 0
 
     def step_forward(self,step):
         alpha = self.alpha; beta = self.beta; num_exp = self.num_exp;
         g = self.g; g_b = self.g_b
         r = np.exp(-beta*step)
+        Int = ( g*(1-r)/beta ).sum()
 
         g   = g*r
         g_b = g_b*r - g*step
@@ -519,6 +525,9 @@ class l_kernel_sequential_exp:
         self.g_b = g_b
         self.l = l
         self.dl = dl
+        self.Int = Int
+
+        return self
 
 
     def event(self):
@@ -530,6 +539,8 @@ class l_kernel_sequential_exp:
         self.g  = g
         self.g_b = g_b
         self.l = l
+
+        return self
 
     def initialize(self,history):
         initialize_l_sequential(self,history)
@@ -645,6 +656,7 @@ class l_kernel_sequential_pow:
         self.g = g
         self.l = 0
         self.dl = {'k':0, 'p':0, 'c':0}
+        self.Int = 0
         self.phi = phi
         self.H = H
         self.H_k = H_k
@@ -653,12 +665,18 @@ class l_kernel_sequential_pow:
 
     def step_forward(self,step):
         g = self.g; phi = self.phi; H = self.H; H_k = self.H_k; H_p = self.H_p; H_c = self.H_c;
+        index = phi*step<1e-6
+        v = np.where(index,step,np.divide((1-np.exp(-phi*step)),phi,where=~index))
+        Int = (g*v).dot(H) #(g*(1-np.exp(-phi*step))/phi).dot(H)
         g = g*np.exp(-phi*step)
         l = g.dot(H)
         dl = {'k':g.dot(H_k),'p':g.dot(H_p),'c':g.dot(H_c)}
         self.g = g
         self.l = l
         self.dl = dl
+        self.Int = Int
+
+        return self
 
     def event(self):
         g = self.g; H = self.H;
@@ -666,6 +684,8 @@ class l_kernel_sequential_pow:
         l = g.dot(H)
         self.g = g
         self.l = l
+
+        return self
 
     def initialize(self,history):
         initialize_l_sequential(self,history)
@@ -697,7 +717,7 @@ def lg_kernel_sum_sequential(l_kernel_sequential,Data):
     return [l,dl]
 
 
-def t_trans(l_baseline,kernel_int,T,itv):
+def t_trans(l_baseline,l_kernel_sequential,T,itv):
     [st,en] = itv
     n = len(T)
     T_ext = np.hstack([st,T,en])
@@ -706,8 +726,12 @@ def t_trans(l_baseline,kernel_int,T,itv):
     for i in range(n+1):
         Int_ext[i] += (l_baseline(T_ext[i])+l_baseline(T_ext[i+1]))*(T_ext[i+1]-T_ext[i])/2.0
 
-    for i in range(n):
-        Int_ext[i+1] += kernel_int(T_ext[i+1]-T[:i+1],T_ext[i+2]-T[:i+1]).sum()
+    #for i in range(n):
+    #    Int_ext[i+1] += kernel_int(T_ext[i+1]-T[:i+1],T_ext[i+2]-T[:i+1]).sum()
+
+    for i in range(n+1):
+        l_kernel_sequential.step_forward(T_ext[i+1]-T_ext[i]).event()
+        Int_ext[i] += l_kernel_sequential.Int
 
     Int_ext_cumsum = Int_ext.cumsum()
 
