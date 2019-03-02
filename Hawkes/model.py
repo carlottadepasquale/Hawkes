@@ -12,8 +12,7 @@ import matplotlib.gridspec as gridspec
 
 from scipy.special import gamma,digamma
 
-from .StatTool import Quasi_Newton,indexed_ndarray,merge_stg
-from .BasisFunction import loglinear_COS,plinear
+from .tools import Quasi_Newton,indexed_ndarray,merge_stg,loglinear_COS,plinear
 
 try:
     import pyximport; pyximport.install(setup_args={'include_dirs': np.get_include()})
