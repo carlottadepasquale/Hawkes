@@ -16,9 +16,10 @@ from scipy.sparse import linalg as spla
 ###################################################################################### core class
 class BasisFunctionExpansion_1D:
 
-    def __init__(self,itv,num_basis):
+    def __init__(self,itv=None,num_basis=10):
         self.itv = itv
         self.num_basis = num_basis
+        self.coef = np.zeros(num_basis)
 
     def set_coef(self,coef):
         self.coef = coef
@@ -150,7 +151,7 @@ def bump_plinear(x):
 
 ######################################################################################
 
-### cosine bump function
+########### cosine bump function
 class linear_COS(linear_1D):
 
     def Matrix_BasisFunction(self,x):
@@ -165,7 +166,7 @@ class loglinear_COS(loglinear_1D):
         w = (en-st)/(m-3)
         return np.vstack([ bump_cos( (x-st-(i-1)*w)/w ) for i in range(m) ]).transpose()
 
-### Cubic B-spline bump function
+########## Cubic B-spline bump function
 class linear_CBS(linear_1D):
 
     def Matrix_BasisFunction(self,x):
@@ -185,13 +186,44 @@ class loglinear_CBS(loglinear_1D):
         w = (en-st)/(m-3)
         return np.vstack([ bump_cbs( (x-st-(i-1)*w)/w ) for i in range(m) ]).transpose()
 
-### piecewise linear function
+########## piecewise linear function
 class plinear(linear_1D):
 
     def Matrix_BasisFunction(self,x):
         [st,en] = self.itv; m = self.num_basis;
         w = (en-st)/(m-1)
         return np.vstack([ bump_plinear( (x-st-i*w)/w ) for i in range(m) ]).transpose()
+    
+########## state-space model
+class linear_SSM(linear_1D):
+    
+    def get_y(self):
+        return self.coef
+    
+    def set_bayes(self,order=1):
+        
+        n = self.num_basis
+        
+        if order == 1:
+            d0 = np.hstack((1,2*np.ones(n-2),1))
+            d1 = -1*np.ones(n-1)
+            data = [d1,d0,d1]
+            diags = [-1,0,1]
+            #rank_W = n-1
+        elif order == 2:        
+            d0 = np.hstack(([1,5],6*np.ones(n-4),[5,1]))
+            d1 = np.hstack((-2,-4*np.ones(n-3),-2))
+            d2 = np.ones(n-2)
+            data = np.array([d2,d1,d0,d1,d2])
+            diags = np.arange(-2,3)
+            #rank_W = n-2
+        
+        W = sparse.diags(data,diags,shape=(n,n),format='csc')
+        self.W = W
+        return self
+
+    def GH_transform(self,G,H):
+        return [G,H]
 
 ###################################################################### basic routines
 def logdet_sp(P):
