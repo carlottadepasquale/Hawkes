@@ -128,6 +128,9 @@ class estimator(base_class):
         self.para = para
         return LG_SelfExcitingPointProcess(self)
 
+    def L_itv(self,itv):
+        return L_SelfExcitingPointProcess_itv(self,itv)
+
     def predict(self,en_f,num_seq=1):
         T = self.Data['T']
         itv = self.itv;
@@ -174,6 +177,33 @@ def LG_SelfExcitingPointProcess(model):
     G = para.inherit().set_values(G)
 
     return [L,G]
+
+def L_SelfExcitingPointProcess_itv(model,itv):
+
+    T = model.Data['T']
+    n = T.shape[0]
+    [st,en] = itv
+    index_itv = (st<T) & (T<en)
+    n_itv = index_itv.sum()
+
+    [l_baseline,_] = model.baseline.LG_SUM()
+    [l_kernel,_]   = model.kernel.LG_SUM()
+    l = l_baseline + l_kernel
+    l = l[index_itv]
+
+    T_ext = np.hstack([st,T[index_itv],en])
+    Int_baseline = 0
+    Int_kernel = 0
+
+    for i in range(n_itv+1):
+        Int_baseline += (model.baseline.l(T_ext[i])+model.baseline.l(T_ext[i+1])) * (T_ext[i+1]-T_ext[i]) / 2.0
+    Int_kernel = model.kernel.int(np.where(st-T>0,st-T,0),np.where(en-T>0,en-T,0)).sum()
+    Int = Int_baseline + Int_kernel
+
+    L = np.sum(np.log(l)) - Int
+
+    return L
+
 
 ##########################################################################################################
 ## baseline class

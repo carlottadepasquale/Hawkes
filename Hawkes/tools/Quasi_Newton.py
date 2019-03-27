@@ -162,7 +162,11 @@ def Quasi_Newton(model,prior=[],merge=[],opt=[]):
     param.add_hash( [ pr for pr in para_list if     model.stg["para_exp"][pr] ], "para_exp")
     param.add_hash( [ pr for pr in para_list if not model.stg["para_exp"][pr] ], "para_ord")
 
-    para = param.inherit().set_values_from_dict(model.stg["para_ini"]) if "para_ini" not in opt else param.inherit().set_values_from_dict(model.para)
+    if 'para_ini' not in opt:
+        para = param.inherit().set_values_from_dict(model.stg['para_ini'])
+    else:
+        para = param.inherit().set_values_from_dict(opt['para_ini'])
+
     step_Q = param.inherit().set_values_from_dict(model.stg["para_step_Q"]).values
     m = len(para)
 
@@ -214,6 +218,10 @@ def Quasi_Newton(model,prior=[],merge=[],opt=[]):
             #print(G1)
             print( "L = %.3f, norm(G) = %e\n" % (L1,np.linalg.norm(G1)) )
             #sys.exit()
+
+        if 'stop' in opt:
+            if i_loop == opt['stop']:
+                break
 
         #break rule
         if np.linalg.norm(G1) < 1e-5 :
