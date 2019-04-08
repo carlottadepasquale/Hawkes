@@ -68,6 +68,14 @@ class base_class:
     def iei_trans(self):
         T_trans,_ = self.t_trans()
         return np.ediff1d(T_trans)
+    
+    def ll_event(self):
+        T_trans,_ = self.t_trans()
+        Int_l = np.ediff1d( np.append(0,T_trans) )
+        T = self.Data['T']
+        l_kernel_sequential = self.kernel.l_sequential()
+        l = l_at_event(self.baseline.l,l_kernel_sequential,T)
+        return np.log(l) - Int_l
 
     ### branching ratio
     def branching_ratio(self):
@@ -745,6 +753,16 @@ def lg_kernel_sum_sequential(l_kernel_sequential,Data):
 
     return [l,dl]
 
+def l_at_event(l_baseline,l_kernel_sequential,T):
+    n = len(T)
+    l = l_baseline(T)
+
+    for i in range(n-1):
+        l_kernel_sequential.event()
+        l_kernel_sequential.step_forward(T[i+1]-T[i])
+        l[i+1] += l_kernel_sequential.l
+        
+    return l
 
 def t_trans(l_baseline,l_kernel_sequential,T,itv):
     [st,en] = itv
