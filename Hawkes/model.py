@@ -37,7 +37,7 @@ class base_class:
         return self
 
     def set_baseline(self,type,**kwargs):
-        baseline_class = {'const':baseline_const,'loglinear':baseline_loglinear,'plinear':baseline_plinear,'prop':baseline_prop,'custom':baseline_custom}
+        baseline_class = {'const':baseline_const,'loglinear':baseline_loglinear,'plinear':baseline_plinear,'prop':baseline_prop,'custom':baseline_custom,'const_MultiSeq':baseline_const_MultiSeq}
         self.baseline = baseline_class[type](self,**kwargs)
         return self
 
@@ -68,7 +68,7 @@ class base_class:
     def iei_trans(self):
         T_trans,_ = self.t_trans()
         return np.ediff1d(T_trans)
-    
+
     def ll_event(self):
         T_trans,_ = self.t_trans()
         Int_l = np.ediff1d( np.append(0,T_trans) )
@@ -160,6 +160,57 @@ class estimator(base_class):
         en_f = self.en_f
         plot_N_pred(T,T_pred,itv,en_f)
 
+class estimator_MultiSeq(base_class):
+
+    def fit(self,Data,itv,num_seq,prior=[],opt=[],merge=[]):
+
+        self.num_seq = num_seq
+        self.itv = itv
+        self.Data = [ Data[i][ (itv[i][0]<Data[i]) & (Data[i]<itv[i][1]) ].copy() for i in range(num_seq) ]
+
+        n_total = np.sum([ len(self.Data[i])   for i in range(num_seq) ])
+        l_total = np.sum([ itv[i][1]-itv[i][0] for i in range(num_seq) ])
+        self.mu_init = 0.5*n_total/l_total
+
+        stg_b = self.baseline.prep_fit()
+        stg_k = self.kernel.prep_fit()
+        stg = merge_stg([stg_b,stg_k])
+        self.stg = stg
+
+        self.estimators = []
+        for i in range(num_seq):
+            estimator_tmp = estimator().set_kernel('exp',num_exp=1).set_baseline('const')
+            estimator_tmp.itv = self.itv[i]
+            estimator_tmp.Data = {'T':self.Data[i]}
+            self.estimators.append(estimator_tmp)
+
+        [para,L,ste,G_norm,i_loop] = Quasi_Newton(self,prior,merge,opt)
+
+        self.para = para
+        self.parameter = para.to_dict()
+        self.L = L
+        self.AIC = -2.0*(L-len(para))
+        self.br = self.kernel.branching_ratio()
+        self.ste = ste
+        self.i_loop = i_loop
+
+        return self
+
+    def LG(self,para,only_L=False):
+
+        self.para = para
+
+        for i in range(self.num_seq):
+            [L_tmp,G_tmp]=self.estimators[i].LG(para)
+
+            if i==0:
+                L = L_tmp
+                G = G_tmp
+            else:
+                L = L + L_tmp
+                G.values = G.values + G_tmp.values
+
+        return [L,G]
 
 ##########################################################################################################
 ## LG for general point process
@@ -414,6 +465,24 @@ class baseline_custom:
 
     def l(self,t):
         return self.l_custom(t)
+
+############################
+class baseline_const_MultiSeq:
+
+    def __init__(self,model):
+        self.type = 'const_MultiSeq'
+        self.model = model
+
+    def prep_fit(self):
+
+        list =      ['mu']
+        length =    {'mu':1 }
+        exp =       {'mu':True }
+        ini =       {'mu':self.model.mu_init}
+        step_Q =    {'mu':0.2 }
+        step_diff = {'mu':0.01 }
+
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
 
 ##########################################################################################################
 ## kernel class
@@ -761,7 +830,7 @@ def l_at_event(l_baseline,l_kernel_sequential,T):
         l_kernel_sequential.event()
         l_kernel_sequential.step_forward(T[i+1]-T[i])
         l[i+1] += l_kernel_sequential.l
-        
+
     return l
 
 def t_trans(l_baseline,l_kernel_sequential,T,itv):

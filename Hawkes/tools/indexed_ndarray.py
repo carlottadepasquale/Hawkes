@@ -35,7 +35,7 @@ class indexed_ndarray():
     def create_from_dict(self,dic):
         para_list = dic.keys()
         para_length = [ 1 if isinstance(x,numbers.Number) else len(x) for x in dic.values() ]
-        values = np.hstack(dic.values())
+        values = np.hstack(list(dic.values()))
         self.set_hash(para_list,para_length).set_values(values)
         return self
 
