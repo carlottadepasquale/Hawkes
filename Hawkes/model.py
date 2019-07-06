@@ -46,6 +46,10 @@ class base_class:
         self.para = indexed_ndarray().create_from_dict(parameter)
         return self
 
+    def set_data(self,Data,itv):
+        self.kernel.set_data(Data,itv)
+        return self
+
     ### l
     def tl(self):
         T = self.Data['T']
@@ -114,6 +118,8 @@ class estimator(base_class):
         self.itv = itv
         T = np.array(T); T = T[(itv[0]<T)&(T<itv[1])].copy();
         self.Data = {'T':T}
+
+        self.kernel.set_data(self.Data,self.itv)
 
         stg_b = self.baseline.prep_fit()
         stg_k = self.kernel.prep_fit()
@@ -495,6 +501,9 @@ class kernel_exp:
         self.model = model
         self.para_list = list( itertools.product(['alpha','beta'],range(num_exp)))
 
+    def set_data(self,Data,itv):
+        return self
+
     def prep_fit(self):
         num_exp = self.num_exp
         list =      ['alpha','beta']
@@ -662,6 +671,9 @@ class kernel_pow():
         self.type = 'pow'
         self.model = model
         self.para_list = ['k','p','c']
+
+    def set_data(self,Data,itv):
+        return self
 
     def prep_fit(self):
         list = ['k','p','c']
