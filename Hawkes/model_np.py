@@ -178,22 +178,22 @@ class estimator_np:
         return np.log(l) - Int
 
     def plot_kernel(self):
-        x = np.vstack([self.bins[:-1],self.bins[1:]]).transpose().flatten()
+        bins = np.linspace(0,self.support,self.num_bin+1)
+        x = np.vstack([bins[:-1],bins[1:]]).transpose().flatten()
         y = np.repeat(self.para['lambda'],2)
         plt.plot(x,y,'k-')
 
-    """
+    def set_para(self,para):
+        self.para = para
+        return self
 
-    """
+class estimator_np_MultiSeq():
 
-
-
-
-
-
-
-"""
-class estimator_MultiSeq(base_class):
+    def __init__(self,support,num_bin):
+        self.type = 'nonpara'
+        self.support = support
+        self.num_bin = num_bin
+        self.para_list = [ ('lambda',i) for i in range(num_bin) ]
 
     def fit(self,Data,itv,num_seq,prior=[],opt=[],merge=[]):
 
@@ -201,20 +201,24 @@ class estimator_MultiSeq(base_class):
         self.itv = itv
         self.Data = [ Data[i][ (itv[i][0]<Data[i]) & (Data[i]<itv[i][1]) ].copy() for i in range(num_seq) ]
 
+        support = self.support
+        num_bin = self.num_bin
+
         n_total = np.sum([ len(self.Data[i])   for i in range(num_seq) ])
         l_total = np.sum([ itv[i][1]-itv[i][0] for i in range(num_seq) ])
-        self.mu_init = 0.5*n_total/l_total
+        mu_init = 0.5*n_total/l_total
 
-        stg_b = self.baseline.prep_fit()
-        stg_k = self.kernel.prep_fit()
-        stg = merge_stg([stg_b,stg_k])
-        self.stg = stg
+        list =      ['mu','lambda']
+        length =    {'mu':1,'lambda':num_bin }
+        exp =       {'mu':True,'lambda':True }
+        ini =       {'mu':mu_init,'lambda':np.ones(num_bin)*0.5/support  }
+        step_Q =    {'mu':0.2,'lambda':np.ones(num_bin)*0.2  }
+        step_diff = {'mu':0.01,'lambda':np.ones(num_bin)*0.01 }
+        self.stg = {"para_list":list,'para_length':length,'para_exp':exp,'para_ini':ini,'para_step_Q':step_Q,'para_step_diff':step_diff}
 
         self.estimators = []
         for i in range(num_seq):
-            estimator_tmp = estimator().set_kernel('exp',num_exp=1).set_baseline('const')
-            estimator_tmp.itv = self.itv[i]
-            estimator_tmp.Data = {'T':self.Data[i]}
+            estimator_tmp = estimator_np(support,num_bin).set_data({'T':self.Data[i]},self.itv[i])
             self.estimators.append(estimator_tmp)
 
         [para,L,ste,G_norm,i_loop] = Quasi_Newton(self,prior,merge,opt)
@@ -223,11 +227,13 @@ class estimator_MultiSeq(base_class):
         self.parameter = para.to_dict()
         self.L = L
         self.AIC = -2.0*(L-len(para))
-        self.br = self.kernel.branching_ratio()
         self.ste = ste
         self.i_loop = i_loop
 
-        return self
+        model = estimator_np(self.support,self.num_bin).set_para(para)
+        model.L = L
+
+        return model
 
     def LG(self,para,only_L=False):
 
@@ -244,4 +250,3 @@ class estimator_MultiSeq(base_class):
                 G.values = G.values + G_tmp.values
 
         return [L,G]
-"""
