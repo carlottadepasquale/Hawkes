@@ -2,6 +2,23 @@ import numpy as np
 from scipy.special import gamma,digamma
 cimport numpy as np
 
+def LG_kernel_SUM_exp_cython(np.ndarray[np.float64_t,ndim=1] T, np.ndarray[np.float64_t,ndim=1] alpha, np.ndarray[np.float64_t,ndim=1] beta):
+    cdef int m = len(alpha)
+    cdef int n = T.shape[0]
+    cdef np.ndarray[np.float64_t,ndim=1] l    = np.zeros(n, dtype=np.float64)
+    cdef np.ndarray[np.float64_t,ndim=1] l_i  = np.zeros(n, dtype=np.float64)
+    cdef np.ndarray[np.float64_t,ndim=1] dl_a = np.zeros(n, dtype=np.float64)
+    cdef np.ndarray[np.float64_t,ndim=1] dl_b = np.zeros(n, dtype=np.float64)
+    cdef dict dl = {}
+    
+    for i in range(m):
+        l_i,dl_a,dl_b = LG_kernel_SUM_exp_i_cython(T,alpha[i],beta[i])
+        l = l + l_i
+        dl.update({('alpha',i):dl_a,('beta',i):dl_b})
+        
+    return [l,dl]
+        
+
 def LG_kernel_SUM_exp_i_cython(np.ndarray[np.float64_t,ndim=1] T, double alpha, double beta):
 
     cdef int n = T.shape[0]
@@ -19,7 +36,7 @@ def LG_kernel_SUM_exp_i_cython(np.ndarray[np.float64_t,ndim=1] T, double alpha, 
 
     cdef int i;
 
-    for i in xrange(n-1):
+    for i in range(n-1):
         x   = ( x   + alpha*beta  ) * r[i]
         x_a = ( x_a +       beta  ) * r[i]
         x_b = ( x_b + alpha       ) * r[i] - x*dt[i]
@@ -64,3 +81,49 @@ def LG_kernel_SUM_pow_cython(np.ndarray[np.float64_t,ndim=1] T,double k, double 
         dl_c[i+1] = g.dot(H_c)
 
     return [l,dl_k,dl_p,dl_c]
+
+def preprocess_data_nonpara_cython(np.ndarray[np.float64_t,ndim=1] T, np.ndarray[np.float64_t,ndim=1] bin_edge, double en):
+    
+    cdef double support = bin_edge[-1]
+    cdef double bin_width = bin_edge[1] - bin_edge[0]
+    cdef int i,j
+    cdef int n = T.shape[0]
+    cdef int m = bin_edge.shape[0] - 1 # the number of bins
+    
+    ###### dl
+    cdef list index_tgt_list = []
+    cdef list index_trg_list = []
+    
+    for i in range(n):
+        for j in range(i-1,-1,-1):
+            if T[i] - T[j] < support:
+                index_tgt_list.append(i)
+                index_trg_list.append(j)
+            else:
+                break
+                
+    cdef np.ndarray[np.int64_t,ndim=1] index_tgt = np.array(index_tgt_list)
+    cdef np.ndarray[np.int64_t,ndim=1] index_trg = np.array(index_trg_list)
+    cdef np.ndarray[np.int64_t,ndim=1] index_bin = np.searchsorted(bin_edge,T[index_tgt]-T[index_trg],side='right') - 1 
+    
+    ###
+    cdef np.ndarray[np.float64_t,ndim=2] dl = np.zeros((m,n))
+    
+    for i in range(index_tgt.shape[0]):
+        dl[index_bin[i],index_tgt[i]] += 1.0 
+        
+    ###### dInt
+    cdef np.ndarray[np.float64_t,ndim=2] dInt = np.zeros((m,n))
+    cdef np.ndarray[np.int64_t,ndim=1] index = np.searchsorted(bin_edge,en-T,side='right') - 1
+    cdef np.ndarray[np.float64_t,ndim=1] d_from_left = en - T - bin_edge[index]
+    cdef int index_i
+    
+    for i in range(n):
+        index_i = index[i]
+        if index_i < m:
+            dInt[index_i,i] = d_from_left[i] 
+        if index_i > 0:
+            for j in range(index_i):
+                dInt[j,i] = bin_width
+                
+    return [dl,dInt.sum(axis=-1)]

@@ -8,7 +8,8 @@ https://omitakahiro.github.io/Hawkes/index.html
 This package provides the following kernel functions:
 - exponential function  
 - sum of multiple exponential functions  
-- power-law function  
+- power-law function
+- non-parametric function
 
 This package provides the following classes of a baseline intensity:
 - constant baseline  
