@@ -1,5 +1,5 @@
 # Hawkes
-a python package for simulation and inference of Hawkes processes.
+a python package for simulation and inference (maximum likelihood estimation) of Hawkes processes.
 
 # Tutorial
 https://omitakahiro.github.io/Hawkes/index.html
