@@ -20,4 +20,4 @@ This package provides the following classes of a baseline intensity:
 # Contact
 Takahiro Omi  
 https://sites.google.com/view/omitakahiro/home-english  
-omi[at]sat.t.u-tokyo.ac.jp  
+takahiro.omi.em[at]gmail.com
