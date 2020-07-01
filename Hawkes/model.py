@@ -12,16 +12,16 @@ import matplotlib.gridspec as gridspec
 
 from scipy.special import gamma,digamma
 
-from .tools import Quasi_Newton,merge_stg,loglinear_COS,plinear
+from .tools import Quasi_Newton,merge_stg,loglinear_COS,plinear,pconst
 
 try:
     import pyximport; pyximport.install(setup_args={'include_dirs': np.get_include()},language_level=2)
-    from .Hawkes_C import LG_kernel_SUM_exp_cython, LG_kernel_SUM_pow_cython, preprocess_data_nonpara_cython, LG_kernel_SUM_nonpara_cython
+    from .Hawkes_C import LG_kernel_SUM_exp_cython, LG_kernel_SUM_pow_cython, preprocess_data_nonpara_cython
     cython_import = True
-    #print("cython")
+    #print("cython mode")
 except:
     cython_import = False
-    #print("python")
+    #print("failed to import cython: use python mode")
 
 
 ##########################################################################################################
@@ -36,7 +36,7 @@ class base_class:
         return self
 
     def set_baseline(self,type,**kwargs):
-        baseline_class = {'const':baseline_const,'loglinear':baseline_loglinear,'plinear':baseline_plinear,'custom':baseline_custom}
+        baseline_class = {'const':baseline_const,'loglinear':baseline_loglinear,'plinear':baseline_plinear,'pconst':baseline_pconst,'custom':baseline_custom}
         self.baseline = baseline_class[type](**kwargs)
         return self
 
@@ -496,6 +496,56 @@ class baseline_plinear(base_component_baseline_class):
         plinear = self.plinear
         coef = para['mu']
         return plinear.set_coef(coef).get_y_at(t)
+    
+###########################
+class baseline_pconst(base_component_baseline_class):
+
+    def __init__(self,num_basis):
+        self.type = 'pconst'
+        self.num_basis = num_basis
+
+    def prep_fit(self):
+        itv = self.itv
+        T = self.Data['T']
+        n = T.shape[0]
+        num_basis = self.num_basis
+
+        list   =    ['mu']
+        length =    {'mu':num_basis }
+        exp =       {'mu':True }
+        ini =       {'mu':0.5*n/(itv[1]-itv[0])*np.ones(num_basis) }
+        step_Q =    {'mu':0.2 * np.ones(num_basis) }
+        step_diff = {'mu':0.01 * np.ones(num_basis) }
+
+        self.pconst = pconst(itv,num_basis).set_x(T)
+
+        return {"list":list,'length':length,'exp':exp,'ini':ini,'step_Q':step_Q,'step_diff':step_diff}
+
+    def LG_SUM(self):
+        para = self.para
+        pconst = self.pconst
+        coef = para['mu']
+        pconst.set_coef(coef)
+        l = pconst.get_y()
+        dl = pconst.get_dy()
+        dl = {'mu':np.transpose(dl)}
+        return [l,dl]
+
+    def LG_INT(self):
+        para = self.para
+        pconst = self.pconst
+        coef = para['mu']
+        pconst.set_coef(coef)
+        Int = pconst.get_int()
+        dInt = pconst.get_dint()
+        dInt = {'mu':dInt}
+        return [Int,dInt]
+
+    def l(self,t):
+        para = self.para
+        pconst = self.pconst
+        coef = para['mu']
+        return pconst.set_coef(coef).get_y_at(t)
 
 ###########################
 class baseline_custom(base_component_baseline_class):

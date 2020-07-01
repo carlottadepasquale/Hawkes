@@ -149,6 +149,10 @@ def bump_plinear(x):
     y = np.interp(x,[-1,0,1],[0,1,0])
     return y
 
+def bump_pconst(x):
+    y = np.interp(x,[0,0,1,1],[0,1,1,0])
+    return y
+
 ######################################################################################
 
 ########### cosine bump function
@@ -193,6 +197,25 @@ class plinear(linear_1D):
         [st,en] = self.itv; m = self.num_basis;
         w = (en-st)/(m-1)
         return np.vstack([ bump_plinear( (x-st-i*w)/w ) for i in range(m) ]).transpose()
+    
+########## piecewise constant function
+class pconst(linear_1D):
+
+    def Matrix_BasisFunction(self,x):
+        [st,en] = self.itv; m = self.num_basis;
+        w = (en-st)/m
+        return np.vstack([ bump_pconst( (x-st-i*w)/w ) for i in range(m) ]).transpose()
+    
+    def get_int(self):
+        [st,en] = self.itv; m = self.num_basis; 
+        w = (en-st)/m
+        Int = self.coef.sum()*w
+        return Int
+
+    def get_dint(self):
+        [st,en] = self.itv; m = self.num_basis; 
+        w = (en-st)/m
+        return np.ones(m)*w
     
 ########## state-space model
 class linear_SSM(linear_1D):
