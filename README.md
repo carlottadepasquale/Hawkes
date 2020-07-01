@@ -12,7 +12,8 @@ This package provides the following kernel functions:
 - non-parametric function
 
 This package provides the following classes of a baseline intensity:
-- constant baseline  
+- constant baseline
+- piecewise constant baseline model
 - piecewise linear baseline model
 - log-linear baseline model
 - custom baseline function
