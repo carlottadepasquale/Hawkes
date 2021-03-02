@@ -199,7 +199,7 @@ def Check_QN(model,para,prior):
             for i in range(len(a)):
                 para_tmp = para.copy()
                 para_tmp[param.idx((key,index))] += a[i] * ste[param.idx((key,index))]
-                L = Penalized_LG(model,para_tmp,prior)[0]/50
+                L = Penalized_LG(model,para_tmp,prior)[0]
                 plt.plot(para_tmp[param.idx((key,index))],L,"ko")
 
                 if i==10:
